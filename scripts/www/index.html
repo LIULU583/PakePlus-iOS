@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>📞 拨号器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--primary:#2C6FAC;--primary-dark:#1B3A5C;--success:#1B7A3D;--bg:#F5F7FA;--card:#FFF;--text:#212529;--text-sec:#6C757D;--border:#DEE2E6;--radius:12px}
+body{font-family:-apple-system,"Microsoft YaHei","PingFang SC",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+.header{background:linear-gradient(135deg,var(--primary-dark),var(--primary));color:#fff;padding:16px 20px;text-align:center}
+.header h1{font-size:20px;font-weight:700}
+.header p{font-size:12px;opacity:.8;margin-top:2px}
+.container{flex:1;padding:16px;max-width:500px;margin:0 auto;width:100%;display:flex;flex-direction:column}
+
+.phone-display{background:var(--card);border-radius:var(--radius);padding:28px 20px;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.08);margin-bottom:14px}
+.phone-label{font-size:13px;color:var(--text-sec);margin-bottom:6px}
+.phone-number{font-size:34px;font-weight:800;color:var(--primary-dark);letter-spacing:3px;font-family:"Courier New",monospace;word-break:break-all;text-decoration:none;display:block}
+.phone-number:active{opacity:.7}
+.phone-name{font-size:15px;color:var(--primary);margin-top:4px;font-weight:500}
+.phone-index{font-size:12px;color:var(--text-sec);margin-top:3px}
+
+/* 拨号按钮 - 用真实的<a>标签 */
+.dial-btn{width:100%;padding:16px;border:none;border-radius:var(--radius);background:var(--success);color:#fff;font-size:20px;font-weight:700;text-align:center;box-shadow:0 4px 12px rgba(27,122,61,.3);margin-bottom:14px;cursor:pointer}
+.dial-btn:active{transform:scale(.97);opacity:.9}
+.dial-btn:disabled{background:#ccc;box-shadow:none}
+
+.nav-row{display:flex;gap:10px;margin-bottom:14px}
+.nav-btn{flex:1;padding:12px;border:2px solid var(--primary);border-radius:12px;background:var(--card);color:var(--primary);font-size:15px;font-weight:600;cursor:pointer;text-align:center}
+.nav-btn:active{background:var(--primary);color:#fff}
+.nav-btn:disabled{opacity:.4}
+
+.import-card{background:var(--card);border-radius:var(--radius);padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.06);flex:1;display:flex;flex-direction:column}
+.import-card h3{font-size:14px;color:var(--primary-dark);margin-bottom:6px}
+.import-card textarea{flex:1;min-height:70px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:13px;resize:vertical;outline:none;font-family:inherit}
+.import-card textarea:focus{border-color:var(--primary)}
+.import-actions{display:flex;gap:8px;margin-top:8px}
+.import-actions button{flex:1;padding:9px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
+.import-btn{background:var(--primary);color:#fff}
+.clear-btn{background:var(--bg);color:var(--text-sec);border:1px solid var(--border)!important}
+.count-badge{display:inline-block;background:var(--primary);color:#fff;font-size:11px;padding:2px 10px;border-radius:20px;margin-left:6px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📞 拨号器</h1>
+  <p>导入号码 · 逐个拨号</p>
+</div>
+
+<div class="container">
+  <div class="phone-display">
+    <div class="phone-label">当前号码</div>
+    <a class="phone-number" id="phoneNum" href="#">—</a>
+    <div class="phone-name" id="phoneName"></div>
+    <div class="phone-index" id="phoneIndex"></div>
+  </div>
+
+  <!-- 拨号按钮：复制号码+尝试跳转 -->
+  <button class="dial-btn" id="dialBtn" disabled onclick="dialCurrent()">📞 拨号</button>
+  <p style="text-align:center;font-size:12px;color:var(--text-sec);margin-top:-8px;margin-bottom:14px" id="hintText"></p>
+
+  <div class="nav-row">
+    <button class="nav-btn" id="prevBtn" disabled onclick="prevNumber()">◀ 上一个</button>
+    <button class="nav-btn" id="nextBtn" disabled onclick="nextNumber()">下一个 ▶</button>
+  </div>
+
+  <div class="import-card">
+    <h3>📥 导入号码 <span class="count-badge" id="countBadge">0</span></h3>
+    <textarea id="importArea" placeholder=""></textarea>
+    <div class="import-actions">
+      <button class="import-btn" onclick="importNumbers()">导入</button>
+      <button class="clear-btn" onclick="clearAll()">清空</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY='dialer_v2_clean';
+let numbers=[],currentIdx=-1;
+
+function loadData(){try{const r=localStorage.getItem(STORAGE_KEY);if(r){numbers=JSON.parse(r);if(numbers.length>0)currentIdx=0}}catch(e){}updateUI()}
+function saveData(){localStorage.setItem(STORAGE_KEY,JSON.stringify(numbers));updateUI()}
+
+function importNumbers(){
+  const text=document.getElementById('importArea').value.trim();
+  if(!text){alert('请先粘贴号码');return}
+  const lines=text.split('\n');let imported=0;
+  lines.forEach(line=>{
+    line=line.trim();if(!line)return;
+    let name='',phone='';
+    const tab=line.split('\t'),comma=line.split(','),space=line.split(/\s+/);
+    let parts;parts=tab.length>1?tab:comma.length>1?comma:space.length>1?space:[line];
+    if(parts.length==1){phone=parts[0].replace(/[^\d]/g,'')}
+    else{const p1=parts[0].trim(),p2=parts[1].trim();if(/^\d{7,15}$/.test(p1.replace(/[^\d]/g,''))){phone=p1.replace(/[^\d]/g,'');name=p2}else{name=p1;phone=p2.replace(/[^\d]/g,'')}}
+    if(phone&&phone.length>=7){numbers.push({name,phone});imported++}
+  });
+  if(imported>0){if(currentIdx<0)currentIdx=0;saveData();document.getElementById('importArea').value='';alert('✅ 导入 '+imported+' 个号码')}
+  else alert('⚠️ 未识别到有效号码')
+}
+
+function dialCurrent(){if(currentIdx<0||currentIdx>=numbers.length)return;var c=numbers[currentIdx];var p=c.phone;
+  // 方式1：复制到剪贴板
+  try{navigator.clipboard.writeText(p).then(function(){document.getElementById('hintText').textContent='✅ 已复制: '+p+' 打开拨号盘粘贴即可'}).catch(function(){})}catch(e){}
+  // 方式2：创建a标签点击
+  var a=document.createElement('a');a.href='tel:'+p;a.style.display='none';document.body.appendChild(a);a.click();setTimeout(function(){document.body.removeChild(a)},1000);
+  // 方式3：location跳转
+  setTimeout(function(){window.location.href='tel:'+p},200);
+}
+function clearAll(){if(numbers.length&&confirm('清空所有号码？')){numbers=[];currentIdx=-1;saveData()}}
+
+function showNumber(i){
+  if(i<0||i>=numbers.length){currentIdx=-1;return}
+  currentIdx=i;const c=numbers[i];
+  var el=document.getElementById('phoneNum');el.textContent=c.phone;el.href='tel:'+c.phone;
+  document.getElementById('dialBtn').disabled=false;
+  document.getElementById('phoneName').textContent=c.name||'';
+  document.getElementById('phoneIndex').textContent=(i+1)+'/'+numbers.length;
+  document.getElementById('dialBtn').disabled=false;
+  updateNavButtons();
+}
+
+function prevNumber(){if(numbers.length&&currentIdx>0)showNumber(currentIdx-1)}
+function nextNumber(){if(numbers.length&&currentIdx<numbers.length-1)showNumber(currentIdx+1)}
+function updateNavButtons(){document.getElementById('prevBtn').disabled=currentIdx<=0;document.getElementById('nextBtn').disabled=currentIdx>=numbers.length-1||currentIdx<0}
+
+function updateUI(){
+  if(numbers.length>0){
+    if(currentIdx<0)currentIdx=0;
+    showNumber(currentIdx);
+  }else{
+    var el=document.getElementById('phoneNum');el.textContent='—';el.href='#';
+    document.getElementById('dialBtn').disabled=true;
+    document.getElementById('phoneName').textContent='';
+    document.getElementById('phoneIndex').textContent='';
+    document.getElementById('dialBtn').disabled=true;
+    document.getElementById('prevBtn').disabled=true;
+    document.getElementById('nextBtn').disabled=true;
+  }
+  document.getElementById('countBadge').textContent=numbers.length;
+}
+
+loadData();
+</script>
+</body>
+</html>
